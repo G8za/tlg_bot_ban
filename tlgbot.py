@@ -1,104 +1,74 @@
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackContext
-import asyncio
-import requests
+import pytz
+import re
 import configparser
+import asyncio
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import nest_asyncio
 
-# Применение nest_asyncio для поддержки вложенных событийных циклов
+# Применяем патч для поддержки asyncio в Spyder
 nest_asyncio.apply()
 
-# Константы для шагов диалога
-NAME, AGE, EMAIL = range(3)
+# Список слов, считающихся ненормативной лексикой
+BAD_WORDS = ["нахуй", "ебаная", "пизда", "хуя", "залупа", "гандон", "ебал", "хуила", "пидорас"]  # Замените на реальные маты
 
-# URL вашего сервера
-SERVER_URL = "https://yourserver.com/api"
-
-config = configparser.ConfigParser()
-config.read("config.ini")
-
-# Присваиваем значения внутренним переменным
-bot_token = config['Telegram']['bot_token']
-# ID группы, куда нужно добавлять пользователей
-GROUP_ID = -1002448352331  # Замените на ID вашей группы
+# Функция для проверки на маты
+def contains_bad_words(text):
+    pattern = r'\b(' + '|'.join(BAD_WORDS) + r')\b'
+    return bool(re.search(pattern, text, re.IGNORECASE))
 
 # Команда /start
-async def start(update: Update, context: CallbackContext) -> int:
-    await update.message.reply_text("Привет! Пожалуйста, введите своё имя:")
-    return NAME
+async def start(update: Update, context):
+    await update.message.reply_text("Привет! Я бот и баню за маты. Давайте соблюдать правила.")
 
-# Получение имени
-async def get_name(update: Update, context: CallbackContext) -> int:
-    context.user_data["name"] = update.message.text
-    await update.message.reply_text("Спасибо! Теперь укажите ваш возраст:")
-    return AGE
+# Обработчик сообщений
+async def handle_message(update: Update, context):
+    message = update.message.text
+    user = update.message.from_user
 
-# Получение возраста
-async def get_age(update: Update, context: CallbackContext) -> int:
-    try:
-        age = int(update.message.text)
-        context.user_data["age"] = age
-        await update.message.reply_text("Отлично! Теперь напишите ваш email:")
-        return EMAIL
-    except ValueError:
-        await update.message.reply_text("Пожалуйста, введите корректный возраст (число).")
-        return AGE
+    if contains_bad_words(message):
+        chat_id = update.message.chat.id
+        user_id = user.id
+        name = user.full_name
 
-# Получение email и завершение
-async def get_email(update: Update, context: CallbackContext) -> int:
-    email = update.message.text
-    context.user_data["email"] = email
-
-    # Отправка данных на сервер
-    data = {
-        "name": context.user_data["name"],
-        "age": context.user_data["age"],
-        "email": email,
-    }
-
-    try:
-        response = requests.post(SERVER_URL, json=data)
-        if response.status_code == 200:
-            await update.message.reply_text("Данные успешно отправлены на сервер!")
+        # Проверка прав бота
+        bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
+        if bot_member.status in ["administrator", "creator"]:
+            try:
+                # Запрещаем отправку сообщений пользователю
+                await context.bot.restrict_chat_member(
+                    chat_id=chat_id, 
+                    user_id=user_id, 
+                    permissions={
+                        "can_send_messages": False,
+                        "can_send_media_messages": False,
+                        "can_send_other_messages": False,
+                        "can_add_web_page_previews": False
+                    }
+                )
+                await update.message.reply_text(f"Пользователь {name} заблокирован за использование ненормативной лексики. Он не может отправлять сообщения.")
+            except Exception as e:
+                await update.message.reply_text(f"Ошибка при блокировке пользователя: {e}")
         else:
-            await update.message.reply_text("Ошибка при отправке данных на сервер.")
-    except Exception as e:
-        await update.message.reply_text(f"Произошла ошибка: {e}")
+            await update.message.reply_text("У бота нет достаточных прав для блокировки пользователей.")
 
-    # Добавление в группу через ссылку-приглашение
-    try:
-        # Получение ссылки-приглашения
-        invite_link = await context.bot.export_chat_invite_link(chat_id=GROUP_ID)
-        await update.message.reply_text(f"Присоединяйтесь к группе по ссылке: {invite_link}")
-    except Exception as e:
-        await update.message.reply_text(f"Не удалось создать ссылку-приглашение: {e}")
+async def main():
+    config = configparser.ConfigParser()
+    config.read("config.ini")
+    
+    # Токен бота из файла конфигурации
+    TOKEN = config['Telegram']['bot_token']
 
-    return ConversationHandler.END
+    # Создание приложения
+    app = Application.builder().token(TOKEN).build()
 
-# Отмена диалога
-async def cancel(update: Update, context: CallbackContext) -> int:
-    await update.message.reply_text("Операция отменена.")
-    return ConversationHandler.END
-
-def main():
-    # Создаём приложение
-    application = Application.builder().token(bot_token).build()
-
-    # Создаём ConversationHandler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            AGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_age)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    application.add_handler(conv_handler)
+    # Обработчики команд и сообщений
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запуск бота
-    application.run_polling()
+    print("Бот запущен. Нажмите Ctrl+C для завершения.")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
