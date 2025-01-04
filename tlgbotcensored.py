@@ -46,6 +46,8 @@ async def handle_message(update: Update, context):
         bot_member = await context.bot.get_chat_member(chat_id, context.bot.id)
         if bot_member.status in ["administrator", "creator"]:
             try:
+                # Текущее время + 10 минут
+                until_time = int(time.time()) + 10 * 60  # 10 минут в секундах
                 # Запрещаем отправку сообщений пользователю
                 await context.bot.restrict_chat_member(
                     chat_id=chat_id, 
@@ -57,7 +59,7 @@ async def handle_message(update: Update, context):
                         "can_add_web_page_previews": False
                     }
                 )
-                await update.message.reply_text(f"Пользователь {name} заблокирован за использование ненормативной лексики. Он не может отправлять сообщения.")
+                await update.message.reply_text(f"Пользователь {name} заблокирован за использование ненормативной лексики. Он не может отправлять сообщения в течении 10 минут.")
             except Exception as e:
                 await update.message.reply_text(f"Ошибка при блокировке пользователя: {e}")
         else:
