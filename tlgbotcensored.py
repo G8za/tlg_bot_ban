@@ -9,8 +9,19 @@ import nest_asyncio
 # Применяем патч для поддержки asyncio в Spyder
 nest_asyncio.apply()
 
-# Список слов, считающихся ненормативной лексикой
-BAD_WORDS = ["нахуй", "ебаная", "пизда", "хуя", "залупа", "гандон", "ебал", "хуила", "пидорас"]  # Замените на реальные маты
+BAD_WORDS_FILE = '/path/to/your/repository/bad_words.txt'
+
+# Функция для загрузки списка матов
+def load_bad_words():
+    try:
+        with open(BAD_WORDS_FILE, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f.readlines()]
+    except Exception as e:
+        print(f"Ошибка при загрузке мата: {e}")
+        return []
+
+# Загрузите матов в переменную
+BAD_WORDS = load_bad_words()
 
 # Функция для проверки на маты
 def contains_bad_words(text):
