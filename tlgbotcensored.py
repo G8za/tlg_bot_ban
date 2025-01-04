@@ -2,7 +2,8 @@ import pytz
 import re
 import configparser
 import asyncio
-from telegram import Update
+import time
+from telegram import Update, ChatPermissions
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import nest_asyncio
 
@@ -20,7 +21,7 @@ def load_bad_words():
         print(f"Ошибка при загрузке мата: {e}")
         return []
 
-# Загрузите матов в переменную
+# Загрузка списка матов
 BAD_WORDS = load_bad_words()
 
 # Функция для проверки на маты
@@ -48,23 +49,26 @@ async def handle_message(update: Update, context):
             try:
                 # Текущее время + 10 минут
                 until_time = int(time.time()) + 10 * 60  # 10 минут в секундах
-                # Запрещаем отправку сообщений пользователю
+
+                # Запрещаем отправку всех сообщений пользователю
+                permissions = ChatPermissions(can_send_messages=False)
+
                 await context.bot.restrict_chat_member(
-                    chat_id=chat_id, 
-                    user_id=user_id, 
-                    permissions={
-                        "can_send_messages": False,
-                        "can_send_media_messages": False,
-                        "can_send_other_messages": False,
-                        "can_add_web_page_previews": False
-                    }
+                    chat_id=chat_id,
+                    user_id=user_id,
+                    permissions=permissions,
+                    until_date=until_time
                 )
-                await update.message.reply_text(f"Пользователь {name} заблокирован за использование ненормативной лексики. Он не может отправлять сообщения в течении 10 минут.")
+
+                await update.message.reply_text(
+                    f"Пользователь {name} заблокирован за использование ненормативной лексики. Он не может отправлять сообщения в течение 10 минут."
+                )
             except Exception as e:
                 await update.message.reply_text(f"Ошибка при блокировке пользователя: {e}")
         else:
             await update.message.reply_text("У бота нет достаточных прав для блокировки пользователей.")
 
+# Главная функция
 async def main():
     config = configparser.ConfigParser()
     config.read("config.ini")
